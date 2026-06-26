@@ -1,0 +1,169 @@
+{
+  "created_at": "2026-06-24T02:12:25.137716+00:00",
+  "langsmith": {
+    "enabled": true,
+    "project": "kids-daily-story-agent",
+    "endpoint": "https://api.smith.langchain.com",
+    "has_api_key": true
+  },
+  "dataset": {
+    "dataset_name": "kids-daily-story-agent-golden-v1",
+    "dataset_id": "d5ea1870-1010-4fce-a880-f2b6565a6e80",
+    "example_count": 1
+  },
+  "summary": {
+    "case_count": 1,
+    "passed_count": 1,
+    "failed_count": 0,
+    "pass_rate": 1.0,
+    "average_latency_ms": 3861.88,
+    "total_estimated_cost_usd": 0.000431,
+    "failed_estimated_cost_usd": 0.0,
+    "total_tokens": 862,
+    "failed_tokens": 0,
+    "metric_failures": {},
+    "category_failure_rates": {
+      "happy_path": 0.0
+    },
+    "dominant_failure_mode": "",
+    "dominant_failure_count": 0
+  },
+  "results": [
+    {
+      "case_id": "happy_age6_space_soccer_kindness",
+      "category": "happy_path",
+      "description": "Default child profile with multiple interests and kindness theme.",
+      "passed": true,
+      "score": 0.955,
+      "failed_metrics": [],
+      "metrics": [
+        {
+          "name": "output_structure_valid",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "missing_fields": []
+          }
+        },
+        {
+          "name": "age_appropriate_length",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "word_count": 178,
+            "expected_range": [
+              120,
+              240
+            ]
+          }
+        },
+        {
+          "name": "required_interests_included",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "uses_interest": true,
+            "matched_interests": [
+              "space",
+              "soccer",
+              "kind animals"
+            ],
+            "missing_interests": []
+          }
+        },
+        {
+          "name": "favorite_character_type_included",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "uses_favorite_character": true,
+            "matched_favorite_characters": [
+              "friendly robot"
+            ],
+            "favorite_characters": [
+              "friendly robot",
+              "curious explorer"
+            ]
+          }
+        },
+        {
+          "name": "theme_alignment",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "target_theme": "kindness"
+          }
+        },
+        {
+          "name": "moral_alignment",
+          "passed": true,
+          "score": 0.5,
+          "details": {
+            "target_moral": "small acts of kindness help friends feel included",
+            "token_overlap": 0.5
+          }
+        },
+        {
+          "name": "child_safe_content",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "blocked_terms": []
+          }
+        },
+        {
+          "name": "not_repetitive_for_child",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "is_repetitive": false,
+            "reason": "",
+            "similarity": 0.0
+          }
+        },
+        {
+          "name": "latency_within_budget",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "latency_ms": 3861.88,
+            "max_latency_ms": 15000
+          }
+        },
+        {
+          "name": "estimated_cost_within_budget",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "estimated_cost_usd": 0.000431,
+            "max_estimated_cost_usd": 0.05
+          }
+        },
+        {
+          "name": "tool_steps_succeeded",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "tool_failures": []
+          }
+        }
+      ],
+      "story_id": "story-20260624021221",
+      "story_title": "Maya and the Starlight Soccer Game",
+      "generation_source": "nebius",
+      "llm_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "llm_usage": {
+        "completion_tokens": 423,
+        "prompt_tokens": 439,
+        "total_tokens": 862,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "total_tokens": 862,
+      "estimated_cost_usd": 0.000431,
+      "latency_ms": 3861.88,
+      "validation_passed": true,
+      "validation_issues": []
+    }
+  ]
+}

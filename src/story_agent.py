@@ -30,6 +30,7 @@ from src.story_storage import (
     load_child_profile,
     save_story_history,
 )
+from src.story_tracing import traceable
 
 
 SENSITIVE_TOPICS = {
@@ -105,6 +106,8 @@ class StoryAgentState(TypedDict, total=False):
     approval_payload: Dict[str, Any]
     status: str
     errors: List[str]
+    llm_usage: Dict[str, Any]
+    llm_model: str
 
 
 _story_llm: Optional[Any] = None
@@ -128,6 +131,11 @@ def _get_llm() -> Optional[Any]:
     return _story_llm
 
 
+@traceable(
+    name="nebius_story_chat_completion",
+    run_type="llm",
+    metadata={"provider": "nebius", "component": "story_generation"},
+)
 def _call_nebius(system: str, user: Dict[str, Any]) -> Dict[str, Any]:
     if not NEBIUS_API_KEY:
         raise RuntimeError("NEBIUS_API_KEY is not configured.")
@@ -155,7 +163,35 @@ def _call_nebius(system: str, user: Dict[str, Any]) -> Dict[str, Any]:
     response.raise_for_status()
     payload = response.json()
     content = payload["choices"][0]["message"]["content"]
-    return _extract_json(content)
+    parsed = _extract_json(content)
+    parsed["_llm_usage"] = payload.get("usage", {})
+    parsed["_llm_model"] = payload.get("model", LLM_MODEL)
+    return parsed
+
+
+@traceable(
+    name="anthropic_story_chat_completion",
+    run_type="llm",
+    metadata={"provider": "anthropic", "component": "story_generation"},
+)
+def _call_anthropic(system: str, user: Dict[str, Any]) -> Dict[str, Any]:
+    llm = _get_llm()
+    if not llm:
+        raise RuntimeError("Anthropic LLM is not configured.")
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    response = llm.invoke(
+        [
+            SystemMessage(content=system),
+            HumanMessage(content=json.dumps(user, indent=2)),
+        ]
+    )
+    payload = _extract_json(response.content)
+    usage = getattr(response, "usage_metadata", None) or getattr(response, "response_metadata", {}).get("usage", {})
+    payload["_llm_usage"] = usage or {}
+    payload["_llm_model"] = LLM_MODEL
+    return payload
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -192,10 +228,24 @@ def _fallback_story(profile: Dict[str, Any], theme: str, error: str = "") -> Dic
     }
 
 
+@traceable(
+    name="generate_story_payload",
+    run_type="chain",
+    metadata={"component": "story_agent", "stage": "draft_or_revision"},
+)
 def _generate_story_payload(state: StoryAgentState, revision: bool = False) -> Dict[str, Any]:
     profile = state["child_profile"]
     theme = state["selected_theme"]
     favorite_character_types = _story_safe_favorite_character_types(profile)
+    age = int(profile.get("age") or 6)
+    word_budget = "70-140 words" if age <= 3 else "80-160 words" if age < 5 else "120-240 words"
+    interests = [str(interest) for interest in profile.get("interests", []) if str(interest).strip()]
+    avoided_topics = sorted(
+        {
+            *(str(topic).lower() for topic in profile.get("topics_to_avoid", []) if str(topic).strip()),
+            *SENSITIVE_TOPICS,
+        }
+    )
     recent_summaries = [
         {
             "title": s.get("story_title") or s.get("title"),
@@ -209,11 +259,12 @@ def _generate_story_payload(state: StoryAgentState, revision: bool = False) -> D
     feedback = state.get("parent_feedback", "")
     mem0_memory_text = format_mem0_memories(state.get("mem0_memories", []))
 
-    system = """Act as a Montessory specialist.You write safe, warm, age-appropriate children's stories.
+    system = """Act as a Montessori specialist. You write safe, warm, age-appropriate children's stories.
 Return only valid JSON with these keys:
 title, story, summary, characters, setting, parent_note.
 Avoid scary, violent, shaming, medical, or manipulative content.
-Make the lesson gentle, not preachy."""
+Make the lesson gentle, not preachy.
+Keep the selected theme explicit in the story, summary, or parent_note."""
 
     user = {
         "child_profile": profile,
@@ -222,15 +273,17 @@ Make the lesson gentle, not preachy."""
         "long_term_child_memories": mem0_memory_text,
         "revision_feedback": feedback if revision else "",
         "requirements": [
-            "Write a short bedtime story: 140-240 words, or 90-160 words if the child is under age 5.",
+            f"Write a short bedtime story within this word budget: {word_budget}.",
             "Use simple language appropriate for the child's age and reading level.",
-            "Include every child interest as a visible story detail in the title, setting, characters, or story events.",
-            f"Child interests that must appear: {', '.join(profile.get('interests') or [])}.",
+            "Include every child interest exactly enough that a checker can find the words in the title, setting, characters, summary, parent_note, or story events.",
+            f"Child interests that must appear: {', '.join(interests)}.",
             "Include at least one favorite character type as a visible character or story helper.",
             "If a favorite is a specific copyrighted character, do not use the exact name; use the story-safe character type instead.",
             f"Story-safe favorite character types to include: {', '.join(favorite_character_types)}.",
-            "Avoid topics_to_avoid from the profile.",
-            "Do not repeat recent plots, settings, or character combinations.",
+            f"Selected theme to make explicit: {theme}.",
+            "State the gentle lesson in parent_note using plain words from the selected theme and story action.",
+            f"Do not use these avoided words or topics anywhere: {', '.join(avoided_topics)}.",
+            "Do not repeat recent plots, settings, story titles, or character combinations; change at least one major element when recent stories exist.",
             "Use long_term_child_memories when they are relevant, but do not mention private memory details directly.",
         ],
     }
@@ -240,19 +293,9 @@ Make the lesson gentle, not preachy."""
             payload = _call_nebius(system, user)
             return {**payload, "_generation_source": "nebius", "_generation_error": ""}
 
-        llm = _get_llm()
-        if not llm:
+        if not _get_llm():
             return _fallback_story(profile, theme, "No configured LLM provider was available.")
-
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        response = llm.invoke(
-            [
-                SystemMessage(content=system),
-                HumanMessage(content=json.dumps(user, indent=2)),
-            ]
-        )
-        payload = _extract_json(response.content)
+        payload = _call_anthropic(system, user)
         return {**payload, "_generation_source": LLM_PROVIDER, "_generation_error": ""}
     except Exception as exc:
         return _fallback_story(profile, theme, f"{type(exc).__name__}: provider call failed.")
@@ -486,15 +529,18 @@ def _validate_story(state: StoryAgentState) -> Dict[str, Any]:
     }
 
 
+@traceable(name="load_child_profile_node", run_type="chain", metadata={"component": "story_graph"})
 def load_profile_node(state: StoryAgentState) -> Dict[str, Any]:
     child_id = state.get("child_id") or "demo-child"
     return {"child_id": child_id, "child_profile": load_child_profile(child_id)}
 
 
+@traceable(name="load_story_history_node", run_type="chain", metadata={"component": "story_graph"})
 def load_history_node(state: StoryAgentState) -> Dict[str, Any]:
     return {"recent_stories": get_recent_stories(state["child_id"], limit=10)}
 
 
+@traceable(name="load_mem0_memory_node", run_type="chain", metadata={"component": "story_graph"})
 def load_mem0_memory_node(state: StoryAgentState) -> Dict[str, Any]:
     query = (
         "child story preferences, favorite character types, favorite themes, "
@@ -503,6 +549,7 @@ def load_mem0_memory_node(state: StoryAgentState) -> Dict[str, Any]:
     return {"mem0_memories": search_child_memory(state["child_id"], query, limit=5)}
 
 
+@traceable(name="choose_theme_node", run_type="chain", metadata={"component": "story_graph"})
 def choose_theme_node(state: StoryAgentState) -> Dict[str, Any]:
     profile = state["child_profile"]
     requested_theme = state.get("selected_theme")
@@ -521,6 +568,7 @@ def choose_theme_node(state: StoryAgentState) -> Dict[str, Any]:
     return {"selected_theme": THEME_POOL[day_index]}
 
 
+@traceable(name="generate_story_node", run_type="chain", metadata={"component": "story_graph"})
 def generate_story_node(state: StoryAgentState) -> Dict[str, Any]:
     payload = _generate_story_payload(state)
     story_id = state.get("story_id") or f"story-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
@@ -534,10 +582,13 @@ def generate_story_node(state: StoryAgentState) -> Dict[str, Any]:
         "parent_note": str(payload.get("parent_note", "")),
         "generation_source": str(payload.get("_generation_source", "unknown")),
         "generation_error": str(payload.get("_generation_error", "")),
+        "llm_usage": payload.get("_llm_usage", {}),
+        "llm_model": str(payload.get("_llm_model", LLM_MODEL)),
         "status": "draft_generated",
     }
 
 
+@traceable(name="revise_story_node", run_type="chain", metadata={"component": "story_graph"})
 def revise_story_node(state: StoryAgentState) -> Dict[str, Any]:
     retry_count = state.get("retry_count", 0) + 1
     feedback_parts = []
@@ -556,11 +607,14 @@ def revise_story_node(state: StoryAgentState) -> Dict[str, Any]:
         "parent_note": str(payload.get("parent_note", "")),
         "generation_source": str(payload.get("_generation_source", "unknown")),
         "generation_error": str(payload.get("_generation_error", "")),
+        "llm_usage": payload.get("_llm_usage", {}),
+        "llm_model": str(payload.get("_llm_model", LLM_MODEL)),
         "retry_count": retry_count,
         "status": "draft_revised",
     }
 
 
+@traceable(name="validate_story_node", run_type="chain", metadata={"component": "story_graph"})
 def validate_story_node(state: StoryAgentState) -> Dict[str, Any]:
     return _validate_story(state)
 
@@ -571,6 +625,7 @@ def route_after_validation(state: StoryAgentState) -> str:
     return "approval"
 
 
+@traceable(name="approval_pending_node", run_type="chain", metadata={"component": "story_graph"})
 def approval_pending_node(state: StoryAgentState) -> Dict[str, Any]:
     if state.get("validation_passed"):
         reason = "Story passed validation and is ready for parent approval."
@@ -583,6 +638,7 @@ def approval_pending_node(state: StoryAgentState) -> Dict[str, Any]:
     }
 
 
+@traceable(name="human_review_interrupt_node", run_type="chain", metadata={"component": "story_graph"})
 def human_review_interrupt_node(state: StoryAgentState) -> Dict[str, Any]:
     from langgraph.types import interrupt
 
@@ -619,10 +675,12 @@ def route_parent_decision(state: StoryAgentState) -> str:
     return "reject"
 
 
+@traceable(name="parent_review_node", run_type="chain", metadata={"component": "story_graph"})
 def parent_review_node(state: StoryAgentState) -> Dict[str, Any]:
     return {"status": "parent_decision_received"}
 
 
+@traceable(name="reject_story_node", run_type="chain", metadata={"component": "story_graph"})
 def reject_story_node(state: StoryAgentState) -> Dict[str, Any]:
     return {
         "status": "rejected_by_parent",
@@ -630,6 +688,7 @@ def reject_story_node(state: StoryAgentState) -> Dict[str, Any]:
     }
 
 
+@traceable(name="generate_illustration_node", run_type="chain", metadata={"component": "story_graph"})
 def generate_illustration_node(state: StoryAgentState) -> Dict[str, Any]:
     prompt = build_illustration_prompt(state)
     result = generate_openai_image(
@@ -648,6 +707,7 @@ def generate_illustration_node(state: StoryAgentState) -> Dict[str, Any]:
     }
 
 
+@traceable(name="send_email_node", run_type="chain", metadata={"component": "story_graph"})
 def send_email_node(state: StoryAgentState) -> Dict[str, Any]:
     profile = state["child_profile"]
     subject = f"Today's Story: {state['story_title']}"
@@ -746,6 +806,7 @@ def send_email_node(state: StoryAgentState) -> Dict[str, Any]:
     }
 
 
+@traceable(name="save_history_node", run_type="chain", metadata={"component": "story_graph"})
 def save_history_node(state: StoryAgentState) -> Dict[str, Any]:
     mem0_saved = remember_child_fact(
         state["child_id"],
@@ -876,6 +937,7 @@ def build_review_graph():
     return build_story_graph()
 
 
+@traceable(name="generate_story_draft", run_type="chain", metadata={"component": "story_agent", "workflow": "draft"})
 def generate_story_draft(child_id: str = "demo-child", selected_theme: Optional[str] = None) -> StoryAgentState:
     thread_id = f"story-{uuid.uuid4().hex}"
     initial: StoryAgentState = {"child_id": child_id, "retry_count": 0, "graph_thread_id": thread_id}
@@ -886,6 +948,7 @@ def generate_story_draft(child_id: str = "demo-child", selected_theme: Optional[
     return _state_from_checkpoint(graph, thread_id, result)
 
 
+@traceable(name="apply_parent_decision", run_type="chain", metadata={"component": "story_agent", "workflow": "resume"})
 def apply_parent_decision(
     state: StoryAgentState,
     decision: str,
@@ -906,6 +969,7 @@ def apply_parent_decision(
     return final_state
 
 
+@traceable(name="send_approved_story_now", run_type="chain", metadata={"component": "story_agent", "workflow": "approve_send"})
 def send_approved_story_now(
     state: StoryAgentState,
     include_audio: bool = False,
@@ -937,6 +1001,7 @@ def send_approved_story_now(
     return final_state
 
 
+@traceable(name="generate_and_send_daily_story", run_type="chain", metadata={"component": "story_agent", "workflow": "daily_send"})
 def generate_and_send_daily_story(
     child_id: str = "demo-child",
     selected_theme: Optional[str] = None,

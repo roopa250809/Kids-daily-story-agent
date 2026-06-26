@@ -1,0 +1,176 @@
+{
+  "created_at": "2026-06-25T04:48:16.188781+00:00",
+  "langsmith": {
+    "enabled": true,
+    "project": "kids-daily-story-agent",
+    "endpoint": "https://api.smith.langchain.com",
+    "has_api_key": true
+  },
+  "dataset": {
+    "dataset_name": "kids-daily-story-agent-golden-v1",
+    "dataset_id": "",
+    "example_count": 1
+  },
+  "summary": {
+    "case_count": 1,
+    "passed_count": 0,
+    "failed_count": 1,
+    "pass_rate": 0.0,
+    "average_latency_ms": 4174.75,
+    "total_estimated_cost_usd": 0.000393,
+    "failed_estimated_cost_usd": 0.000393,
+    "total_tokens": 786,
+    "failed_tokens": 786,
+    "metric_failures": {
+      "required_interests_included": 1,
+      "moral_alignment": 1
+    },
+    "category_failure_rates": {
+      "happy_path": 1.0
+    },
+    "dominant_failure_mode": "required_interests_included",
+    "dominant_failure_count": 1
+  },
+  "results": [
+    {
+      "case_id": "happy_age4_blocks_patience",
+      "category": "happy_path",
+      "description": "Preschool story should be shorter and concrete.",
+      "passed": false,
+      "score": 0.848,
+      "failed_metrics": [
+        "required_interests_included",
+        "moral_alignment"
+      ],
+      "metrics": [
+        {
+          "name": "output_structure_valid",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "missing_fields": []
+          }
+        },
+        {
+          "name": "age_appropriate_length",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "word_count": 99,
+            "expected_range": [
+              80,
+              160
+            ]
+          }
+        },
+        {
+          "name": "required_interests_included",
+          "passed": false,
+          "score": 0.0,
+          "details": {
+            "uses_interest": false,
+            "matched_interests": [
+              "blocks"
+            ],
+            "missing_interests": [
+              "rainbows"
+            ]
+          }
+        },
+        {
+          "name": "favorite_character_type_included",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "uses_favorite_character": true,
+            "matched_favorite_characters": [
+              "gentle builder"
+            ],
+            "favorite_characters": [
+              "gentle builder"
+            ]
+          }
+        },
+        {
+          "name": "theme_alignment",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "target_theme": "patience"
+          }
+        },
+        {
+          "name": "moral_alignment",
+          "passed": false,
+          "score": 0.333,
+          "details": {
+            "target_moral": "waiting and trying again can make building more fun",
+            "token_overlap": 0.333
+          }
+        },
+        {
+          "name": "child_safe_content",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "blocked_terms": []
+          }
+        },
+        {
+          "name": "not_repetitive_for_child",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "is_repetitive": false,
+            "reason": "",
+            "similarity": 0.0
+          }
+        },
+        {
+          "name": "latency_within_budget",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "latency_ms": 4174.75,
+            "max_latency_ms": 15000
+          }
+        },
+        {
+          "name": "estimated_cost_within_budget",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "estimated_cost_usd": 0.000393,
+            "max_estimated_cost_usd": 0.05
+          }
+        },
+        {
+          "name": "tool_steps_succeeded",
+          "passed": true,
+          "score": 1.0,
+          "details": {
+            "tool_failures": []
+          }
+        }
+      ],
+      "story_id": "story-20260625044813",
+      "story_title": "Aria and the Rainbow Tower",
+      "generation_source": "nebius",
+      "llm_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "llm_usage": {
+        "completion_tokens": 282,
+        "prompt_tokens": 504,
+        "total_tokens": 786,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "total_tokens": 786,
+      "estimated_cost_usd": 0.000393,
+      "latency_ms": 4174.75,
+      "validation_passed": false,
+      "validation_issues": [
+        "Story must include these child interest(s): rainbows."
+      ]
+    }
+  ]
+}
